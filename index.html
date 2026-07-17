@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <meta
+    name="description"
+    content="한국과 미국 주식의 10년 배당수익률 밴드 분석"
+  >
+
+  <title>10년 배당수익률 밴드</title>
+
+  <link rel="stylesheet" href="./style.css">
+
+  <script
+    src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"
+    defer
+  ></script>
+
+  <script src="./app.js" defer></script>
+</head>
+
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-icon">📊</span>
+
+        <div>
+          <h1>10년 배당수익률 밴드</h1>
+
+          <p>
+            한국·미국 주식의 현재 배당수익률 위치를 확인하세요.
+          </p>
+        </div>
+      </div>
+
+      <form id="search-form" class="search-form">
+        <label for="search-input" class="sr-only">
+          종목명 또는 티커
+        </label>
+
+        <input
+          id="search-input"
+          type="search"
+          placeholder="예: 삼성전자, 005930.KS, 애플, AAPL"
+          autocomplete="off"
+          required
+        >
+
+        <button id="search-button" type="submit">
+          검색
+        </button>
+      </form>
+
+      <div id="search-results" class="search-results"></div>
+    </div>
+  </header>
+
+  <main class="container">
+    <section id="notice" class="notice">
+      <strong>검색 안내</strong>
+
+      <span>
+        종목명 또는 티커를 입력한 후 검색 결과에서 종목을 선택하세요.
+      </span>
+    </section>
+
+    <section id="loading" class="loading hidden">
+      <div class="spinner"></div>
+      <p>Yahoo Finance 데이터를 불러오는 중입니다.</p>
+    </section>
+
+    <section id="error-box" class="error-box hidden"></section>
+
+    <div id="dashboard" class="hidden">
+      <section class="stock-heading">
+        <div>
+          <p id="exchange-name" class="eyebrow"></p>
+          <h2 id="stock-name">-</h2>
+          <p id="stock-symbol" class="stock-symbol">-</p>
+        </div>
+
+        <div class="updated-box">
+          <span>데이터 기준</span>
+          <strong id="updated-date">-</strong>
+        </div>
+      </section>
+
+      <section class="stat-grid">
+        <article class="stat-card">
+          <span>현재 주가</span>
+          <strong id="current-price">-</strong>
+          <small id="currency-label">-</small>
+        </article>
+
+        <article class="stat-card">
+          <span>최근 12개월 배당금</span>
+          <strong id="ttm-dividend">-</strong>
+          <small>액면분할 보정</small>
+        </article>
+
+        <article class="stat-card">
+          <span>현재 배당수익률</span>
+          <strong id="current-yield">-</strong>
+          <small>최근 12개월 기준</small>
+        </article>
+
+        <article class="stat-card">
+          <span>10년 중앙 배당수익률</span>
+          <strong id="median-yield">-</strong>
+          <small>주별 관측치 중앙값</small>
+        </article>
+
+        <article class="stat-card">
+          <span>10년 백분위</span>
+          <strong id="yield-percentile">-</strong>
+          <small>높을수록 수익률이 높은 구간</small>
+        </article>
+
+        <article class="stat-card valuation-card">
+          <span>밴드 판정</span>
+          <strong id="valuation-label">-</strong>
+          <small id="valuation-description">-</small>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">DIVIDEND YIELD BAND</p>
+            <h3>10년 배당수익률 가격 밴드</h3>
+          </div>
+
+          <div class="chart-explanation">
+            배당수익률이 높을수록 가격 밴드는 낮게 계산됩니다.
+          </div>
+        </div>
+
+        <div class="band-legend">
+          <span>
+            <i class="legend-dot actual"></i>
+            실제 주가
+          </span>
+
+          <span>
+            <i class="legend-dot expensive"></i>
+            고평가 영역
+          </span>
+
+          <span>
+            <i class="legend-dot neutral"></i>
+            중립 영역
+          </span>
+
+          <span>
+            <i class="legend-dot cheap"></i>
+            저평가 영역
+          </span>
+        </div>
+
+        <div class="chart-wrap chart-wrap-large">
+          <canvas id="band-chart"></canvas>
+        </div>
+
+        <div id="band-values" class="band-values"></div>
+      </section>
+
+      <section class="two-column">
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">ANNUAL DIVIDENDS</p>
+              <h3>10년 연도별 배당금</h3>
+            </div>
+          </div>
+
+          <p class="panel-description">
+            액면분할이 있었던 경우 현재 주식 수 기준으로 보정합니다.
+          </p>
+
+          <div class="chart-wrap">
+            <canvas id="dividend-chart"></canvas>
+          </div>
+        </article>
+
+        <article class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">YIELD POSITION</p>
+              <h3>배당수익률 분포</h3>
+            </div>
+          </div>
+
+          <div class="yield-position">
+            <div class="yield-scale">
+              <div id="yield-marker" class="yield-marker">
+                <span id="yield-marker-text">현재</span>
+              </div>
+            </div>
+
+            <div class="yield-scale-labels">
+              <span>낮은 수익률<br>고평가 가능</span>
+              <span>중앙</span>
+              <span>높은 수익률<br>저평가 가능</span>
+            </div>
+          </div>
+
+          <dl class="percentile-list">
+            <div>
+              <dt>10% 수익률</dt>
+              <dd id="p10-yield">-</dd>
+            </div>
+
+            <div>
+              <dt>25% 수익률</dt>
+              <dd id="p25-yield">-</dd>
+            </div>
+
+            <div>
+              <dt>50% 수익률</dt>
+              <dd id="p50-yield">-</dd>
+            </div>
+
+            <div>
+              <dt>75% 수익률</dt>
+              <dd id="p75-yield">-</dd>
+            </div>
+
+            <div>
+              <dt>90% 수익률</dt>
+              <dd id="p90-yield">-</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+      <section class="panel">
+        <div class="panel-heading">
+          <div>
+            <p class="eyebrow">DIVIDEND HISTORY</p>
+            <h3>최근 10년 배당금 지급 내역</h3>
+          </div>
+
+          <span id="dividend-count" class="count-badge">0건</span>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>배당락일</th>
+                <th>지급 배당금</th>
+                <th>분할 보정 배당금</th>
+                <th>통화</th>
+              </tr>
+            </thead>
+
+            <tbody id="dividend-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="disclaimer">
+        <strong>주의사항</strong>
+
+        <p>
+          배당수익률이 높다고 반드시 저평가된 것은 아닙니다.
+          주가 하락 또는 향후 배당 삭감 우려 때문에 수익률이
+          상승할 수 있습니다. 본 서비스는 투자 참고용이며
+          투자 권유가 아닙니다.
+        </p>
+
+        <p>
+          데이터는 Yahoo Finance의 공개 데이터를 사용하므로
+          실제 거래소 및 기업 공시와 차이가 있을 수 있습니다.
+        </p>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <p>10년 배당수익률 밴드 · Yahoo Finance 기반</p>
+  </footer>
+</body>
+</html>
