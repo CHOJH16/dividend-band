@@ -11,6 +11,7 @@ const el = {
   input: $("#search-input"),
   button: $("#search-button"),
   results: $("#search-results"),
+
   start: $("#start-message"),
   loading: $("#loading"),
   error: $("#error-box"),
@@ -51,9 +52,8 @@ let dividendChart = null;
 let selectedName = "";
 
 function apiUrl(path, parameters = {}) {
-  const url = new URL(
-    `${API_BASE.replace(/\/+$/, "")}${path}`
-  );
+  const base = API_BASE.replace(/\/+$/, "");
+  const url = new URL(`${base}${path}`);
 
   Object.entries(parameters).forEach(([key, value]) => {
     url.searchParams.set(key, value);
@@ -62,7 +62,7 @@ function apiUrl(path, parameters = {}) {
   return url.toString();
 }
 
-async function requestJson(path, parameters) {
+async function requestJson(path, parameters = {}) {
   const response = await fetch(apiUrl(path, parameters));
 
   let data;
@@ -71,13 +71,14 @@ async function requestJson(path, parameters) {
     data = await response.json();
   } catch {
     throw new Error(
-      "서버 응답을 읽을 수 없습니다. Worker 주소를 확인하세요."
+      "서버 응답을 읽지 못했습니다. Worker 주소를 확인하세요."
     );
   }
 
   if (!response.ok) {
     throw new Error(
-      data.error || `서버 요청 오류: ${response.status}`
+      data.error ||
+      `서버 요청에 실패했습니다. (${response.status})`
     );
   }
 
@@ -121,7 +122,7 @@ function formatShortDate(timestamp) {
   }).format(new Date(timestamp * 1000));
 }
 
-function priceDigits(currency) {
+function moneyDigits(currency) {
   return currency === "KRW" ? 0 : 2;
 }
 
@@ -130,7 +131,7 @@ function formatMoney(value, currency = "USD") {
     return "-";
   }
 
-  const digits = priceDigits(currency);
+  const digits = moneyDigits(currency);
 
   return new Intl.NumberFormat("ko-KR", {
     minimumFractionDigits: digits,
@@ -144,6 +145,23 @@ function formatPercent(value, digits = 2) {
   }
 
   return `${value.toFixed(digits)}%`;
+}
+
+function median(values) {
+  if (!values.length) {
+    return NaN;
+  }
+
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+
+  if (sorted.length % 2 === 0) {
+    return (
+      sorted[middle - 1] + sorted[middle]
+    ) / 2;
+  }
+
+  return sorted[middle];
 }
 
 function percentile(sortedValues, probability) {
@@ -174,7 +192,10 @@ function percentile(sortedValues, probability) {
 }
 
 function percentileRank(values, currentValue) {
-  if (!values.length || !Number.isFinite(currentValue)) {
+  if (
+    !values.length ||
+    !Number.isFinite(currentValue)
+  ) {
     return NaN;
   }
 
@@ -213,23 +234,135 @@ function normalizeEvents(result) {
     .filter((item) => Number.isFinite(item.date))
     .sort((a, b) => a.date - b.date);
 
-  return { dividends, splits };
+  return {
+    dividends,
+    splits,
+  };
+}
+
+function groupDividendsByDate(dividends) {
+  const grouped = new Map();
+
+  dividends.forEach((dividend) => {
+    const dateKey = new Date(
+      dividend.date * 1000
+    ).toISOString().slice(0, 10);
+
+    const existing = grouped.get(dateKey);
+
+    if (existing) {
+      existing.amount += dividend.amount;
+      existing.date = Math.max(
+        existing.date,
+        dividend.date
+      );
+    } else {
+      grouped.set(dateKey, {
+        date: dividend.date,
+        amount: dividend.amount,
+      });
+    }
+  });
+
+  return [...grouped.values()].sort(
+    (a, b) => a.date - b.date
+  );
 }
 
 /*
- * Yahoo Finance의 chart API가 반환하는 과거 종가와
- * 배당 이벤트는 액면분할을 반영한 기준으로 제공됩니다.
- * 따라서 배당금에 분할비율을 다시 적용하지 않습니다.
+ * 배당 지급 간격을 분석해 1년 지급 횟수를 추정합니다.
+ *
+ * 월배당   → 12회
+ * 분기배당 → 4회
+ * 반기배당 → 2회
+ * 연배당   → 1회
+ */
+function estimatePaymentsPerYear(
+  timestamp,
+  dividends
+) {
+  const historyStart =
+    timestamp - Math.floor(3.2 * YEAR);
+
+  const recent = groupDividendsByDate(
+    dividends.filter(
+      (dividend) =>
+        dividend.date <= timestamp &&
+        dividend.date >= historyStart
+    )
+  );
+
+  if (recent.length < 2) {
+    return 1;
+  }
+
+  const intervals = [];
+
+  for (let i = 1; i < recent.length; i += 1) {
+    const intervalDays =
+      (recent[i].date - recent[i - 1].date) / DAY;
+
+    if (
+      intervalDays >= 10 &&
+      intervalDays <= 450
+    ) {
+      intervals.push(intervalDays);
+    }
+  }
+
+  const recentIntervals = intervals.slice(-15);
+  const typicalInterval = median(recentIntervals);
+
+  if (!Number.isFinite(typicalInterval)) {
+    return 1;
+  }
+
+  if (typicalInterval <= 45) {
+    return 12;
+  }
+
+  if (typicalInterval <= 135) {
+    return 4;
+  }
+
+  if (typicalInterval <= 240) {
+    return 2;
+  }
+
+  return 1;
+}
+
+/*
+ * 최근 12개월 배당금 계산
+ *
+ * 정확히 365일만 사용하면 배당락일이 며칠 이동했을 때
+ * 분기배당 4회 중 1회가 잠시 빠질 수 있습니다.
+ *
+ * 이를 막기 위해 최대 400일 안의 배당금을 확인한 후,
+ * 해당 기업의 일반적인 연간 지급 횟수만큼만 사용합니다.
  */
 function ttmDividendAt(timestamp, dividends) {
-  const start = timestamp - 365 * DAY;
+  const searchStart = timestamp - 400 * DAY;
 
-  return dividends
-    .filter(
+  const candidates = groupDividendsByDate(
+    dividends.filter(
       (dividend) =>
-        dividend.date > start &&
+        dividend.date > searchStart &&
         dividend.date <= timestamp
     )
+  );
+
+  if (!candidates.length) {
+    return 0;
+  }
+
+  const paymentCount = estimatePaymentsPerYear(
+    timestamp,
+    dividends
+  );
+
+  return candidates
+    .slice(-paymentCount)
     .reduce(
       (sum, dividend) => sum + dividend.amount,
       0
@@ -252,9 +385,13 @@ function analyzeStock(result) {
 
   const points = [];
 
-  for (let i = 0; i < timestamps.length; i += 1) {
-    const timestamp = Number(timestamps[i]);
-    const close = Number(closes[i]);
+  for (
+    let index = 0;
+    index < timestamps.length;
+    index += 1
+  ) {
+    const timestamp = Number(timestamps[index]);
+    const close = Number(closes[index]);
 
     if (
       !Number.isFinite(timestamp) ||
@@ -273,7 +410,7 @@ function analyzeStock(result) {
     const dividendYield =
       ttmDividend > 0
         ? (ttmDividend / close) * 100
-        : null;
+        : 0;
 
     points.push({
       timestamp,
@@ -320,11 +457,16 @@ function analyzeStock(result) {
     latest.dividendYield
   );
 
+  const tenYearDividends = dividends.filter(
+    (dividend) =>
+      dividend.date >= tenYearCutoff &&
+      dividend.date <= lastTimestamp
+  );
+
   return {
     points,
-    dividends: dividends.filter(
-      (dividend) => dividend.date >= tenYearCutoff
-    ),
+    dividends: tenYearDividends,
+    allDividends: dividends,
     splits,
     levels,
     latest,
@@ -347,10 +489,19 @@ function priceAtYield(dividend, yieldPercent) {
 }
 
 function valuationForRank(rank) {
+  if (!Number.isFinite(rank)) {
+    return {
+      label: "판정 불가",
+      description: "현재 배당수익률을 계산할 수 없습니다.",
+      className: "neutral",
+    };
+  }
+
   if (rank <= 10) {
     return {
       label: "매우 고평가 가능",
-      description: "10년 중 배당수익률이 매우 낮은 구간",
+      description:
+        "10년 중 배당수익률이 매우 낮은 구간",
       className: "expensive",
     };
   }
@@ -358,7 +509,8 @@ function valuationForRank(rank) {
   if (rank <= 25) {
     return {
       label: "고평가 가능",
-      description: "10년 기준 낮은 배당수익률 구간",
+      description:
+        "10년 기준 낮은 배당수익률 구간",
       className: "expensive",
     };
   }
@@ -366,7 +518,8 @@ function valuationForRank(rank) {
   if (rank < 75) {
     return {
       label: "중립 구간",
-      description: "10년 배당수익률의 일반적인 범위",
+      description:
+        "10년 배당수익률의 일반적인 범위",
       className: "neutral",
     };
   }
@@ -374,14 +527,16 @@ function valuationForRank(rank) {
   if (rank < 90) {
     return {
       label: "저평가 가능",
-      description: "10년 기준 높은 배당수익률 구간",
+      description:
+        "10년 기준 높은 배당수익률 구간",
       className: "cheap",
     };
   }
 
   return {
     label: "매우 저평가 가능",
-    description: "10년 중 배당수익률이 매우 높은 구간",
+    description:
+      "10년 중 배당수익률이 매우 높은 구간",
     className: "cheap",
   };
 }
@@ -412,9 +567,12 @@ function renderBandChart(analysis, currency) {
     formatShortDate(point.timestamp)
   );
 
-  const bandData = (level) =>
+  const makePrices = (yieldLevel) =>
     analysis.points.map((point) =>
-      priceAtYield(point.ttmDividend, level)
+      priceAtYield(
+        point.ttmDividend,
+        yieldLevel
+      )
     );
 
   if (bandChart) {
@@ -429,39 +587,49 @@ function renderBandChart(analysis, currency) {
 
       datasets: [
         makeBandDataset(
-          `P10 ${formatPercent(analysis.levels.p10)}`,
-          bandData(analysis.levels.p10),
+          `P10 ${formatPercent(
+            analysis.levels.p10
+          )}`,
+          makePrices(analysis.levels.p10),
           "#d93f4f",
           "rgba(217,63,79,0.10)"
         ),
 
         makeBandDataset(
-          `P25 ${formatPercent(analysis.levels.p25)}`,
-          bandData(analysis.levels.p25),
+          `P25 ${formatPercent(
+            analysis.levels.p25
+          )}`,
+          makePrices(analysis.levels.p25),
           "#ef872f",
           "rgba(239,135,47,0.10)",
           "-1"
         ),
 
         makeBandDataset(
-          `중앙 ${formatPercent(analysis.levels.p50)}`,
-          bandData(analysis.levels.p50),
+          `중앙 ${formatPercent(
+            analysis.levels.p50
+          )}`,
+          makePrices(analysis.levels.p50),
           "#d0aa18",
           "rgba(208,170,24,0.10)",
           "-1"
         ),
 
         makeBandDataset(
-          `P75 ${formatPercent(analysis.levels.p75)}`,
-          bandData(analysis.levels.p75),
+          `P75 ${formatPercent(
+            analysis.levels.p75
+          )}`,
+          makePrices(analysis.levels.p75),
           "#56a875",
           "rgba(86,168,117,0.10)",
           "-1"
         ),
 
         makeBandDataset(
-          `P90 ${formatPercent(analysis.levels.p90)}`,
-          bandData(analysis.levels.p90),
+          `P90 ${formatPercent(
+            analysis.levels.p90
+          )}`,
+          makePrices(analysis.levels.p90),
           "#118c68",
           "rgba(17,140,104,0.10)",
           "-1"
@@ -497,11 +665,15 @@ function renderBandChart(analysis, currency) {
       plugins: {
         legend: {
           position: "bottom",
+
           labels: {
             usePointStyle: true,
             boxWidth: 7,
             padding: 15,
-            font: { size: 11 },
+
+            font: {
+              size: 11,
+            },
           },
         },
 
@@ -512,7 +684,10 @@ function renderBandChart(analysis, currency) {
 
               return (
                 `${context.dataset.label}: ` +
-                `${formatMoney(value, currency)} ${currency}`
+                `${formatMoney(
+                  value,
+                  currency
+                )} ${currency}`
               );
             },
           },
@@ -521,7 +696,10 @@ function renderBandChart(analysis, currency) {
 
       scales: {
         x: {
-          grid: { display: false },
+          grid: {
+            display: false,
+          },
+
           ticks: {
             maxTicksLimit: 8,
             maxRotation: 0,
@@ -531,13 +709,19 @@ function renderBandChart(analysis, currency) {
 
         y: {
           beginAtZero: false,
+
           grid: {
             color: "rgba(120,132,151,0.12)",
           },
+
           ticks: {
             color: "#7a8494",
+
             callback(value) {
-              return formatMoney(Number(value), currency);
+              return formatMoney(
+                Number(value),
+                currency
+              );
             },
           },
         },
@@ -592,14 +776,25 @@ function renderBandSummary(analysis, currency) {
   el.bandSummary.replaceChildren();
 
   items.forEach((item) => {
-    const wrapper = document.createElement("div");
-    const label = document.createElement("span");
-    const value = document.createElement("strong");
+    const wrapper =
+      document.createElement("div");
+
+    const label =
+      document.createElement("span");
+
+    const value =
+      document.createElement("strong");
 
     wrapper.className = "band-price-item";
     label.textContent = item.label;
+
     value.textContent =
-      `${formatMoney(item.value, currency)} ${currency}`;
+      item.value === null
+        ? "-"
+        : `${formatMoney(
+            item.value,
+            currency
+          )} ${currency}`;
 
     wrapper.append(label, value);
     el.bandSummary.append(wrapper);
@@ -616,7 +811,8 @@ function annualDividendData(analysis) {
 
     totals.set(
       year,
-      (totals.get(year) || 0) + dividend.amount
+      (totals.get(year) || 0) +
+        dividend.amount
     );
   });
 
@@ -636,7 +832,9 @@ function annualDividendData(analysis) {
 
   return {
     years,
-    totals: years.map((year) => totals.get(year) || 0),
+    totals: years.map(
+      (year) => totals.get(year) || 0
+    ),
   };
 }
 
@@ -647,63 +845,79 @@ function renderDividendChart(analysis, currency) {
     dividendChart.destroy();
   }
 
-  dividendChart = new Chart($("#dividend-chart"), {
-    type: "bar",
+  dividendChart = new Chart(
+    $("#dividend-chart"),
+    {
+      type: "bar",
 
-    data: {
-      labels: annual.years.map(String),
-      datasets: [
-        {
-          label: `연간 주당배당금 (${currency})`,
-          data: annual.totals,
-          borderColor: "#2457d6",
-          backgroundColor: "rgba(36,87,214,0.68)",
-          borderWidth: 1,
-          borderRadius: 5,
+      data: {
+        labels: annual.years.map(String),
+
+        datasets: [
+          {
+            label:
+              `연간 주당배당금 (${currency})`,
+            data: annual.totals,
+            borderColor: "#2457d6",
+            backgroundColor:
+              "rgba(36,87,214,0.68)",
+            borderWidth: 1,
+            borderRadius: 5,
+          },
+        ],
+      },
+
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+
+        plugins: {
+          legend: {
+            display: false,
+          },
+
+          tooltip: {
+            callbacks: {
+              label(context) {
+                return (
+                  `배당금: ${formatMoney(
+                    Number(context.raw),
+                    currency
+                  )} ${currency}`
+                );
+              },
+            },
+          },
         },
-      ],
-    },
 
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
+        scales: {
+          x: {
+            grid: {
+              display: false,
+            },
+          },
 
-      plugins: {
-        legend: { display: false },
+          y: {
+            beginAtZero: true,
 
-        tooltip: {
-          callbacks: {
-            label(context) {
-              return (
-                `배당금: ${formatMoney(
-                  Number(context.raw),
+            grid: {
+              color:
+                "rgba(120,132,151,0.12)",
+            },
+
+            ticks: {
+              callback(value) {
+                return formatMoney(
+                  Number(value),
                   currency
-                )} ${currency}`
-              );
+                );
+              },
             },
           },
         },
       },
-
-      scales: {
-        x: {
-          grid: { display: false },
-        },
-
-        y: {
-          beginAtZero: true,
-          grid: {
-            color: "rgba(120,132,151,0.12)",
-          },
-          ticks: {
-            callback(value) {
-              return formatMoney(Number(value), currency);
-            },
-          },
-        },
-      },
-    },
-  });
+    }
+  );
 }
 
 function renderDividendTable(analysis, currency) {
@@ -712,7 +926,9 @@ function renderDividendTable(analysis, currency) {
   );
 
   el.dividendBody.replaceChildren();
-  el.dividendCount.textContent = `${dividends.length}건`;
+
+  el.dividendCount.textContent =
+    `${dividends.length}건`;
 
   if (!dividends.length) {
     const row = document.createElement("tr");
@@ -720,6 +936,7 @@ function renderDividendTable(analysis, currency) {
 
     cell.colSpan = 4;
     cell.className = "empty-table";
+
     cell.textContent =
       "최근 10년 배당금 지급 내역이 없습니다.";
 
@@ -731,26 +948,36 @@ function renderDividendTable(analysis, currency) {
   dividends.forEach((dividend) => {
     const row = document.createElement("tr");
 
-    const dateCell = document.createElement("td");
-    const amountCell = document.createElement("td");
-    const adjustedCell = document.createElement("td");
-    const currencyCell = document.createElement("td");
+    const dateCell =
+      document.createElement("td");
 
-    dateCell.textContent = formatDate(dividend.date);
+    const amountCell =
+      document.createElement("td");
 
-    amountCell.textContent = formatMoney(
-      dividend.amount,
-      currency
-    );
+    const adjustedCell =
+      document.createElement("td");
+
+    const currencyCell =
+      document.createElement("td");
+
+    dateCell.textContent =
+      formatDate(dividend.date);
+
+    amountCell.textContent =
+      formatMoney(
+        dividend.amount,
+        currency
+      );
 
     /*
-     * Yahoo가 이미 액면분할을 반영한 배당금을 제공하므로
-     * 분할 보정 배당금은 동일하게 표시됩니다.
+     * Yahoo Finance가 과거 액면분할을 반영한
+     * 주당배당금을 제공하므로 같은 값을 표시합니다.
      */
-    adjustedCell.textContent = formatMoney(
-      dividend.amount,
-      currency
-    );
+    adjustedCell.textContent =
+      formatMoney(
+        dividend.amount,
+        currency
+      );
 
     currencyCell.textContent = currency;
 
@@ -766,19 +993,38 @@ function renderDividendTable(analysis, currency) {
 }
 
 function renderYieldPosition(analysis) {
+  const safeRank = Number.isFinite(
+    analysis.currentRank
+  )
+    ? analysis.currentRank
+    : 0;
+
   const rank = Math.max(
     0,
-    Math.min(100, analysis.currentRank)
+    Math.min(100, safeRank)
   );
 
   el.marker.style.left = `${rank}%`;
-  el.markerText.textContent = `${rank.toFixed(0)}백분위`;
 
-  el.p10.textContent = formatPercent(analysis.levels.p10);
-  el.p25.textContent = formatPercent(analysis.levels.p25);
-  el.p50.textContent = formatPercent(analysis.levels.p50);
-  el.p75.textContent = formatPercent(analysis.levels.p75);
-  el.p90.textContent = formatPercent(analysis.levels.p90);
+  el.markerText.textContent =
+    Number.isFinite(analysis.currentRank)
+      ? `${rank.toFixed(0)}백분위`
+      : "계산 불가";
+
+  el.p10.textContent =
+    formatPercent(analysis.levels.p10);
+
+  el.p25.textContent =
+    formatPercent(analysis.levels.p25);
+
+  el.p50.textContent =
+    formatPercent(analysis.levels.p50);
+
+  el.p75.textContent =
+    formatPercent(analysis.levels.p75);
+
+  el.p90.textContent =
+    formatPercent(analysis.levels.p90);
 }
 
 function renderSummary(result, analysis) {
@@ -794,7 +1040,8 @@ function renderSummary(result, analysis) {
 
   if (
     !selectedName ||
-    selectedName.toUpperCase() === symbol.toUpperCase()
+    selectedName.toUpperCase() ===
+      symbol.toUpperCase()
   ) {
     displayName =
       meta.longName ||
@@ -810,12 +1057,15 @@ function renderSummary(result, analysis) {
 
   el.name.textContent = displayName;
   el.symbol.textContent = symbol;
-  el.updated.textContent = formatDate(
-    analysis.latest.timestamp
-  );
+
+  el.updated.textContent =
+    formatDate(analysis.latest.timestamp);
 
   el.price.textContent =
-    formatMoney(analysis.latest.close, currency);
+    formatMoney(
+      analysis.latest.close,
+      currency
+    );
 
   el.currency.textContent = currency;
 
@@ -826,13 +1076,19 @@ function renderSummary(result, analysis) {
     )} ${currency}`;
 
   el.currentYield.textContent =
-    formatPercent(analysis.latest.dividendYield);
+    formatPercent(
+      analysis.latest.dividendYield
+    );
 
   el.medianYield.textContent =
-    formatPercent(analysis.levels.p50);
+    formatPercent(
+      analysis.levels.p50
+    );
 
   el.yieldPercentile.textContent =
-    `${analysis.currentRank.toFixed(0)}백분위`;
+    Number.isFinite(analysis.currentRank)
+      ? `${analysis.currentRank.toFixed(0)}백분위`
+      : "-";
 
   const valuation = valuationForRank(
     analysis.currentRank
@@ -848,7 +1104,8 @@ function renderSummary(result, analysis) {
     valuation.className
   );
 
-  el.valuationLabel.textContent = valuation.label;
+  el.valuationLabel.textContent =
+    valuation.label;
 
   el.valuationDescription.textContent =
     valuation.description;
@@ -863,9 +1120,11 @@ function renderSearchResults(quotes) {
   el.results.replaceChildren();
 
   if (!quotes.length) {
-    const message = document.createElement("div");
+    const message =
+      document.createElement("div");
 
     message.className = "search-message";
+
     message.textContent =
       "검색 결과가 없습니다. 티커를 직접 입력해 보세요.";
 
@@ -874,11 +1133,20 @@ function renderSearchResults(quotes) {
   }
 
   quotes.forEach((quote) => {
-    const button = document.createElement("button");
-    const nameBox = document.createElement("span");
-    const name = document.createElement("strong");
-    const exchange = document.createElement("small");
-    const symbol = document.createElement("span");
+    const button =
+      document.createElement("button");
+
+    const nameBox =
+      document.createElement("span");
+
+    const name =
+      document.createElement("strong");
+
+    const exchange =
+      document.createElement("small");
+
+    const symbol =
+      document.createElement("span");
 
     button.type = "button";
     button.className = "search-result";
@@ -886,10 +1154,13 @@ function renderSearchResults(quotes) {
     nameBox.className = "search-result-name";
     symbol.className = "search-result-symbol";
 
-    name.textContent = quote.name || quote.symbol;
+    name.textContent =
+      quote.name || quote.symbol;
 
     exchange.textContent =
-      quote.exchange || quote.type || "Yahoo Finance";
+      quote.exchange ||
+      quote.type ||
+      "Yahoo Finance";
 
     symbol.textContent = quote.symbol;
 
@@ -897,8 +1168,11 @@ function renderSearchResults(quotes) {
     button.append(nameBox, symbol);
 
     button.addEventListener("click", () => {
-      selectedName = quote.name || quote.symbol;
+      selectedName =
+        quote.name || quote.symbol;
+
       el.input.value = selectedName;
+
       closeResults();
       loadStock(quote.symbol);
     });
@@ -915,12 +1189,17 @@ async function searchStocks(query) {
   el.button.textContent = "검색 중";
 
   try {
-    const data = await requestJson("/api/search", {
-      q: query,
-      v: Date.now(),
-    });
+    const data = await requestJson(
+      "/api/search",
+      {
+        q: query,
+        v: Date.now(),
+      }
+    );
 
-    renderSearchResults(data.quotes || []);
+    renderSearchResults(
+      data.quotes || []
+    );
   } catch (error) {
     showError(error);
   } finally {
@@ -935,17 +1214,23 @@ async function loadStock(symbol) {
 
   el.start.classList.add("hidden");
   el.dashboard.classList.add("hidden");
+
   showLoading(true);
 
   try {
-    const data = await requestJson("/api/stock", {
-      symbol,
-    });
+    const data = await requestJson(
+      "/api/stock",
+      {
+        symbol,
+      }
+    );
 
     const result = data.result;
 
     if (!result) {
-      throw new Error("종목 데이터가 없습니다.");
+      throw new Error(
+        "종목 데이터가 없습니다."
+      );
     }
 
     const analysis = analyzeStock(result);
@@ -954,7 +1239,10 @@ async function loadStock(symbol) {
 
     el.dashboard.classList.remove("hidden");
 
-    const url = new URL(window.location.href);
+    const url = new URL(
+      window.location.href
+    );
+
     url.searchParams.set(
       "symbol",
       data.resolvedSymbol || symbol
@@ -973,23 +1261,27 @@ async function loadStock(symbol) {
   }
 }
 
-el.form.addEventListener("submit", (event) => {
-  event.preventDefault();
+el.form.addEventListener(
+  "submit",
+  (event) => {
+    event.preventDefault();
 
-  const query = el.input.value.trim();
+    const query = el.input.value.trim();
 
-  if (!query) {
-    return;
+    if (!query) {
+      return;
+    }
+
+    searchStocks(query);
   }
-
-  searchStocks(query);
-});
+);
 
 document
   .querySelectorAll(".example-button")
   .forEach((button) => {
     button.addEventListener("click", () => {
-      const query = button.dataset.query || "";
+      const query =
+        button.dataset.query || "";
 
       el.input.value = query;
       searchStocks(query);
@@ -997,31 +1289,42 @@ document
     });
   });
 
-document.addEventListener("click", (event) => {
-  if (
-    !el.results.contains(event.target) &&
-    !el.form.contains(event.target)
-  ) {
-    closeResults();
+document.addEventListener(
+  "click",
+  (event) => {
+    if (
+      !el.results.contains(event.target) &&
+      !el.form.contains(event.target)
+    ) {
+      closeResults();
+    }
   }
-});
+);
 
-document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") {
-    closeResults();
+document.addEventListener(
+  "keydown",
+  (event) => {
+    if (event.key === "Escape") {
+      closeResults();
+    }
   }
-});
+);
 
-window.addEventListener("DOMContentLoaded", () => {
-  const parameters = new URLSearchParams(
-    window.location.search
-  );
+window.addEventListener(
+  "DOMContentLoaded",
+  () => {
+    const parameters =
+      new URLSearchParams(
+        window.location.search
+      );
 
-  const symbol = parameters.get("symbol");
+    const symbol =
+      parameters.get("symbol");
 
-  if (symbol) {
-    selectedName = symbol;
-    el.input.value = symbol;
-    loadStock(symbol);
+    if (symbol) {
+      selectedName = symbol;
+      el.input.value = symbol;
+      loadStock(symbol);
+    }
   }
-});
+);
