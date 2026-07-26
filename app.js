@@ -427,35 +427,38 @@ function getSplitRatio(split) {
 
 function adjustDividendForSplits(
   dividend,
-  targetTimestamp,
-  splits
+  _targetTimestamp,
+  _splits
 ) {
-  let amount =
-    Number(dividend.amount);
+  /*
+   * Yahoo Finance Chart API가 반환하는 과거 종가와 배당금은
+   * 이미 주식분할이 반영된 현재 주식 수 기준 데이터입니다.
+   *
+   * 따라서 splits 정보를 사용해 배당금을 다시 나누면
+   * SCHD의 2024년 3대 1 분할이나
+   * AAPL의 2020년 4대 1 분할 등이 이중 보정됩니다.
+   *
+   * 예:
+   * SCHD 분할 전 배당금은 API에서 이미 약 0.25달러로
+   * 3대 1 분할 보정되어 반환됩니다.
+   *
+   * 여기서 다시 3으로 나누지 않고
+   * API의 배당금 값을 그대로 사용합니다.
+   */
 
-  if (!Number.isFinite(amount)) {
+  const amount =
+    Number(dividend?.amount);
+
+  if (
+    !Number.isFinite(amount) ||
+    amount < 0
+  ) {
     return 0;
   }
 
-  splits.forEach((split) => {
-    if (
-      split.date > dividend.date &&
-      split.date <= targetTimestamp
-    ) {
-      const ratio =
-        getSplitRatio(split);
-
-      if (
-        Number.isFinite(ratio) &&
-        ratio > 0
-      ) {
-        amount /= ratio;
-      }
-    }
-  });
-
   return amount;
 }
+
 
 function groupDividendsByDate(
   dividends,
