@@ -29,11 +29,11 @@ const el = {
   currentYield: $("#current-yield"),
   medianYield: $("#median-yield"),
   yieldPercentile: $("#yield-percentile"),
+  dividendStreak: $("#dividend-streak"),
 
   valuationCard: $("#valuation-card"),
   valuationLabel: $("#valuation-label"),
-  valuationDescription:
-    $("#valuation-description"),
+  valuationDescription: $("#valuation-description"),
 
   p10: $("#p10-yield"),
   p25: $("#p25-yield"),
@@ -54,10 +54,6 @@ let dividendChart = null;
 let selectedName = "";
 let activeSearchIndex = -1;
 
-/*
- * 정확한 티커 확인 과정에서 받아온 종목 데이터를
- * 사용자가 선택했을 때 다시 요청하지 않도록 저장합니다.
- */
 const exactStockCache = new Map();
 
 /* =========================================================
@@ -65,33 +61,19 @@ const exactStockCache = new Map();
 ========================================================= */
 
 function apiUrl(path, parameters = {}) {
-  const base =
-    API_BASE.replace(/\/+$/, "");
+  const base = API_BASE.replace(/\/+$/, "");
+  const url = new URL(`${base}${path}`);
 
-  const url =
-    new URL(`${base}${path}`);
-
-  Object.entries(parameters).forEach(
-    ([key, value]) => {
-      if (
-        value !== undefined &&
-        value !== null
-      ) {
-        url.searchParams.set(
-          key,
-          String(value)
-        );
-      }
+  Object.entries(parameters).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      url.searchParams.set(key, String(value));
     }
-  );
+  });
 
   return url.toString();
 }
 
-async function requestJson(
-  path,
-  parameters = {}
-) {
+async function requestJson(path, parameters = {}) {
   const response = await fetch(
     apiUrl(path, parameters),
     {
@@ -128,10 +110,7 @@ async function requestJson(
 
 function showLoading(show) {
   if (el.loading) {
-    el.loading.classList.toggle(
-      "hidden",
-      !show
-    );
+    el.loading.classList.toggle("hidden", !show);
   }
 
   if (el.button) {
@@ -140,18 +119,14 @@ function showLoading(show) {
 }
 
 function clearError() {
-  if (!el.error) {
-    return;
-  }
+  if (!el.error) return;
 
   el.error.textContent = "";
   el.error.classList.add("hidden");
 }
 
 function showError(error) {
-  if (!el.error) {
-    return;
-  }
+  if (!el.error) return;
 
   const message =
     error instanceof Error
@@ -187,9 +162,7 @@ function formatDate(timestamp) {
       day: "2-digit",
       timeZone: "UTC",
     }
-  ).format(
-    new Date(timestamp * 1000)
-  );
+  ).format(new Date(timestamp * 1000));
 }
 
 function formatShortDate(timestamp) {
@@ -204,25 +177,19 @@ function formatShortDate(timestamp) {
       month: "2-digit",
       timeZone: "UTC",
     }
-  ).format(
-    new Date(timestamp * 1000)
-  );
+  ).format(new Date(timestamp * 1000));
 }
 
 function moneyDigits(currency) {
   return currency === "KRW" ? 0 : 2;
 }
 
-function formatMoney(
-  value,
-  currency = "USD"
-) {
+function formatMoney(value, currency = "USD") {
   if (!Number.isFinite(value)) {
     return "-";
   }
 
-  const digits =
-    moneyDigits(currency);
+  const digits = moneyDigits(currency);
 
   return new Intl.NumberFormat(
     "ko-KR",
@@ -233,10 +200,7 @@ function formatMoney(
   ).format(value);
 }
 
-function formatPercent(
-  value,
-  digits = 2
-) {
+function formatPercent(value, digits = 2) {
   if (!Number.isFinite(value)) {
     return "-";
   }
@@ -253,13 +217,8 @@ function median(values) {
     return NaN;
   }
 
-  const sorted =
-    [...values].sort(
-      (a, b) => a - b
-    );
-
-  const middle =
-    Math.floor(sorted.length / 2);
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
 
   if (sorted.length % 2 === 0) {
     return (
@@ -271,10 +230,7 @@ function median(values) {
   return sorted[middle];
 }
 
-function percentile(
-  sortedValues,
-  probability
-) {
+function percentile(sortedValues, probability) {
   if (!sortedValues.length) {
     return NaN;
   }
@@ -284,17 +240,11 @@ function percentile(
   }
 
   const position =
-    (sortedValues.length - 1) *
-    probability;
+    (sortedValues.length - 1) * probability;
 
-  const lower =
-    Math.floor(position);
-
-  const upper =
-    Math.ceil(position);
-
-  const fraction =
-    position - lower;
+  const lower = Math.floor(position);
+  const upper = Math.ceil(position);
+  const fraction = position - lower;
 
   if (lower === upper) {
     return sortedValues[lower];
@@ -305,15 +255,11 @@ function percentile(
     (
       sortedValues[upper] -
       sortedValues[lower]
-    ) *
-    fraction
+    ) * fraction
   );
 }
 
-function percentileRank(
-  values,
-  currentValue
-) {
+function percentileRank(values, currentValue) {
   if (
     !values.length ||
     !Number.isFinite(currentValue)
@@ -323,8 +269,7 @@ function percentileRank(
 
   const belowOrEqual =
     values.filter(
-      (value) =>
-        value <= currentValue
+      (value) => value <= currentValue
     ).length;
 
   return (
@@ -356,28 +301,20 @@ function normalizeEvents(result) {
           Number.isFinite(item.amount) &&
           item.amount >= 0
       )
-      .sort(
-        (a, b) => a.date - b.date
-      );
+      .sort((a, b) => a.date - b.date);
 
   const splits =
     Object.values(rawSplits)
       .map((item) => ({
         date: Number(item.date),
-        numerator:
-          Number(item.numerator),
-        denominator:
-          Number(item.denominator),
-        splitRatio:
-          item.splitRatio || "",
+        numerator: Number(item.numerator),
+        denominator: Number(item.denominator),
+        splitRatio: item.splitRatio || "",
       }))
       .filter(
-        (item) =>
-          Number.isFinite(item.date)
+        (item) => Number.isFinite(item.date)
       )
-      .sort(
-        (a, b) => a.date - b.date
-      );
+      .sort((a, b) => a.date - b.date);
 
   return {
     dividends,
@@ -385,69 +322,19 @@ function normalizeEvents(result) {
   };
 }
 
-function getSplitRatio(split) {
-  const numerator =
-    Number(split.numerator);
-
-  const denominator =
-    Number(split.denominator);
-
-  if (
-    Number.isFinite(numerator) &&
-    Number.isFinite(denominator) &&
-    denominator !== 0
-  ) {
-    return numerator / denominator;
-  }
-
-  const text =
-    String(split.splitRatio || "");
-
-  const parts =
-    text.split(":");
-
-  if (parts.length === 2) {
-    const left =
-      Number(parts[0]);
-
-    const right =
-      Number(parts[1]);
-
-    if (
-      Number.isFinite(left) &&
-      Number.isFinite(right) &&
-      right !== 0
-    ) {
-      return left / right;
-    }
-  }
-
-  return 1;
-}
-
+/*
+ * Yahoo Finance Chart API의 과거 종가와 배당금은
+ * 이미 주식분할이 반영된 값입니다.
+ *
+ * SCHD의 2024년 3대 1 분할 등을 다시 보정하면
+ * 배당금이 이중으로 나누어지므로 원본 값을 그대로 사용합니다.
+ */
 function adjustDividendForSplits(
   dividend,
   _targetTimestamp,
   _splits
 ) {
-  /*
-   * Yahoo Finance Chart API가 반환하는 과거 종가와 배당금은
-   * 이미 주식분할이 반영된 현재 주식 수 기준 데이터입니다.
-   *
-   * 따라서 splits 정보를 사용해 배당금을 다시 나누면
-   * SCHD의 2024년 3대 1 분할이나
-   * AAPL의 2020년 4대 1 분할 등이 이중 보정됩니다.
-   *
-   * 예:
-   * SCHD 분할 전 배당금은 API에서 이미 약 0.25달러로
-   * 3대 1 분할 보정되어 반환됩니다.
-   *
-   * 여기서 다시 3으로 나누지 않고
-   * API의 배당금 값을 그대로 사용합니다.
-   */
-
-  const amount =
-    Number(dividend?.amount);
+  const amount = Number(dividend?.amount);
 
   if (
     !Number.isFinite(amount) ||
@@ -459,7 +346,6 @@ function adjustDividendForSplits(
   return amount;
 }
 
-
 function groupDividendsByDate(
   dividends,
   targetTimestamp,
@@ -469,9 +355,7 @@ function groupDividendsByDate(
 
   dividends.forEach((dividend) => {
     const dateKey =
-      new Date(
-        dividend.date * 1000
-      )
+      new Date(dividend.date * 1000)
         .toISOString()
         .slice(0, 10);
 
@@ -482,33 +366,24 @@ function groupDividendsByDate(
         splits
       );
 
-    const existing =
-      grouped.get(dateKey);
+    const existing = grouped.get(dateKey);
 
     if (existing) {
-      existing.amount +=
-        adjustedAmount;
-
-      existing.date =
-        Math.max(
-          existing.date,
-          dividend.date
-        );
-    } else {
-      grouped.set(
-        dateKey,
-        {
-          date: dividend.date,
-          amount: adjustedAmount,
-        }
+      existing.amount += adjustedAmount;
+      existing.date = Math.max(
+        existing.date,
+        dividend.date
       );
+    } else {
+      grouped.set(dateKey, {
+        date: dividend.date,
+        amount: adjustedAmount,
+      });
     }
   });
 
   return [...grouped.values()]
-    .sort(
-      (a, b) => a.date - b.date
-    );
+    .sort((a, b) => a.date - b.date);
 }
 
 /* =========================================================
@@ -520,8 +395,7 @@ function estimatePaymentsPerYear(
   dividends
 ) {
   const recentStart =
-    timestamp -
-    Math.floor(3.2 * YEAR);
+    timestamp - Math.floor(3.2 * YEAR);
 
   const recent =
     dividends
@@ -530,10 +404,7 @@ function estimatePaymentsPerYear(
           dividend.date <= timestamp &&
           dividend.date >= recentStart
       )
-      .sort(
-        (a, b) =>
-          a.date - b.date
-      );
+      .sort((a, b) => a.date - b.date);
 
   if (recent.length < 2) {
     return 1;
@@ -543,19 +414,13 @@ function estimatePaymentsPerYear(
 
   recent.forEach((dividend) => {
     const previous =
-      uniqueDates[
-        uniqueDates.length - 1
-      ];
+      uniqueDates[uniqueDates.length - 1];
 
     if (
       previous === undefined ||
-      Math.abs(
-        dividend.date - previous
-      ) > DAY
+      Math.abs(dividend.date - previous) > DAY
     ) {
-      uniqueDates.push(
-        dividend.date
-      );
+      uniqueDates.push(dividend.date);
     }
   });
 
@@ -580,23 +445,14 @@ function estimatePaymentsPerYear(
       intervalDays >= 10 &&
       intervalDays <= 450
     ) {
-      intervals.push(
-        intervalDays
-      );
+      intervals.push(intervalDays);
     }
   }
 
-  const recentIntervals =
-    intervals.slice(-12);
-
   const typicalInterval =
-    median(recentIntervals);
+    median(intervals.slice(-12));
 
-  if (
-    !Number.isFinite(
-      typicalInterval
-    )
-  ) {
+  if (!Number.isFinite(typicalInterval)) {
     return 1;
   }
 
@@ -673,8 +529,7 @@ function analyzeStock(result) {
       : [];
 
   const quote =
-    result.indicators?.quote?.[0] ||
-    {};
+    result.indicators?.quote?.[0] || {};
 
   const closes =
     Array.isArray(quote.close)
@@ -694,9 +549,7 @@ function analyzeStock(result) {
 
   const lastTimestamp =
     Number(
-      timestamps[
-        timestamps.length - 1
-      ]
+      timestamps[timestamps.length - 1]
     );
 
   const tenYearCutoff =
@@ -734,10 +587,7 @@ function analyzeStock(result) {
 
     const dividendYield =
       ttmDividend > 0
-        ? (
-            ttmDividend /
-            close
-          ) * 100
+        ? (ttmDividend / close) * 100
         : 0;
 
     points.push({
@@ -757,8 +607,7 @@ function analyzeStock(result) {
   const validYields =
     points
       .map(
-        (point) =>
-          point.dividendYield
+        (point) => point.dividendYield
       )
       .filter(
         (value) =>
@@ -766,9 +615,7 @@ function analyzeStock(result) {
           value > 0 &&
           value < 100
       )
-      .sort(
-        (a, b) => a - b
-      );
+      .sort((a, b) => a - b);
 
   if (validYields.length < 20) {
     throw new Error(
@@ -777,26 +624,11 @@ function analyzeStock(result) {
   }
 
   const levels = {
-    p10: percentile(
-      validYields,
-      0.1
-    ),
-    p25: percentile(
-      validYields,
-      0.25
-    ),
-    p50: percentile(
-      validYields,
-      0.5
-    ),
-    p75: percentile(
-      validYields,
-      0.75
-    ),
-    p90: percentile(
-      validYields,
-      0.9
-    ),
+    p10: percentile(validYields, 0.1),
+    p25: percentile(validYields, 0.25),
+    p50: percentile(validYields, 0.5),
+    p75: percentile(validYields, 0.75),
+    p90: percentile(validYields, 0.9),
   };
 
   const latest =
@@ -811,24 +643,146 @@ function analyzeStock(result) {
   const tenYearDividends =
     dividends.filter(
       (dividend) =>
-        dividend.date >=
-          tenYearCutoff &&
-        dividend.date <=
-          lastTimestamp
+        dividend.date >= tenYearCutoff &&
+        dividend.date <= lastTimestamp
     );
 
   return {
     points,
-    dividends:
-      tenYearDividends,
-    allDividends:
-      dividends,
+    dividends: tenYearDividends,
+    allDividends: dividends,
     splits,
     levels,
     latest,
     currentRank,
     tenYearCutoff,
   };
+}
+
+/* =========================================================
+   배당 연속 증가·유지 기간
+========================================================= */
+
+function calculateDividendStreak(analysis) {
+  const annualTotals = new Map();
+
+  analysis.allDividends.forEach((dividend) => {
+    const year =
+      new Date(dividend.date * 1000)
+        .getUTCFullYear();
+
+    const amount =
+      adjustDividendForSplits(
+        dividend,
+        analysis.latest.timestamp,
+        analysis.splits
+      );
+
+    annualTotals.set(
+      year,
+      (annualTotals.get(year) || 0) +
+      amount
+    );
+  });
+
+  const latestDataYear =
+    new Date(
+      analysis.latest.timestamp * 1000
+    ).getUTCFullYear();
+
+  /*
+   * 진행 중인 올해는 연간 배당금이 아직 완성되지 않았으므로
+   * 직전 완료 연도부터 비교합니다.
+   */
+  let currentYear =
+    latestDataYear - 1;
+
+  if (!annualTotals.has(currentYear)) {
+    const availableYears =
+      [...annualTotals.keys()]
+        .filter(
+          (year) => year < latestDataYear
+        )
+        .sort((a, b) => b - a);
+
+    if (!availableYears.length) {
+      return {
+        years: 0,
+        limited: false,
+      };
+    }
+
+    currentYear = availableYears[0];
+  }
+
+  let streak = 0;
+  let limited = false;
+
+  while (true) {
+    const previousYear =
+      currentYear - 1;
+
+    if (!annualTotals.has(currentYear)) {
+      break;
+    }
+
+    if (!annualTotals.has(previousYear)) {
+      limited = streak > 0;
+      break;
+    }
+
+    const currentTotal =
+      annualTotals.get(currentYear);
+
+    const previousTotal =
+      annualTotals.get(previousYear);
+
+    /*
+     * 소수점 계산 오차를 고려해 아주 작은 허용치를 둡니다.
+     * 현재 연간 배당금이 전년과 같거나 크면 증가·유지입니다.
+     */
+    const tolerance =
+      Math.max(
+        0.000001,
+        Math.abs(previousTotal) *
+          0.000001
+      );
+
+    if (
+      currentTotal + tolerance <
+      previousTotal
+    ) {
+      break;
+    }
+
+    streak += 1;
+    currentYear = previousYear;
+  }
+
+  return {
+    years: streak,
+    limited,
+  };
+}
+
+function renderDividendStreak(analysis) {
+  if (!el.dividendStreak) {
+    return;
+  }
+
+  const streak =
+    calculateDividendStreak(analysis);
+
+  if (streak.years <= 0) {
+    el.dividendStreak.textContent =
+      "0년";
+    return;
+  }
+
+  el.dividendStreak.textContent =
+    streak.limited
+      ? `${streak.years}년 이상`
+      : `${streak.years}년`;
 }
 
 /* =========================================================
@@ -912,13 +866,8 @@ function valuationForRank(rank) {
    상단 요약 정보
 ========================================================= */
 
-function renderSummary(
-  result,
-  analysis
-) {
-  const meta =
-    result.meta || {};
-
+function renderSummary(result, analysis) {
+  const meta = result.meta || {};
   const currency =
     meta.currency || "USD";
 
@@ -977,8 +926,7 @@ function renderSummary(
   if (el.currentYield) {
     el.currentYield.textContent =
       formatPercent(
-        analysis.latest
-          .dividendYield
+        analysis.latest.dividendYield
       );
   }
 
@@ -997,6 +945,8 @@ function renderSummary(
         ? `${analysis.currentRank.toFixed(1)}%`
         : "-";
   }
+
+  renderDividendStreak(analysis);
 
   const valuation =
     valuationForRank(
@@ -1059,8 +1009,7 @@ function renderBandChart(
   analysis,
   currency
 ) {
-  const canvas =
-    $("#band-chart");
+  const canvas = $("#band-chart");
 
   if (
     !canvas ||
@@ -1187,8 +1136,7 @@ function renderBandChart(
             label: "실제 주가",
             data: actual,
             borderColor: "#155eef",
-            backgroundColor:
-              "#155eef",
+            backgroundColor: "#155eef",
             borderWidth: 3,
             pointRadius: 0,
             pointHoverRadius: 4,
@@ -1281,12 +1229,9 @@ function renderBandPriceSummary(
   analysis,
   currency
 ) {
-  if (!el.bandSummary) {
-    return;
-  }
+  if (!el.bandSummary) return;
 
-  const latest =
-    analysis.latest;
+  const latest = analysis.latest;
 
   const items = [
     {
@@ -1341,8 +1286,7 @@ function renderBandPriceSummary(
     const value =
       document.createElement("strong");
 
-    label.textContent =
-      item.label;
+    label.textContent = item.label;
 
     value.textContent =
       `${formatMoney(
@@ -1350,14 +1294,8 @@ function renderBandPriceSummary(
         currency
       )} ${currency}`;
 
-    wrapper.append(
-      label,
-      value
-    );
-
-    el.bandSummary.appendChild(
-      wrapper
-    );
+    wrapper.append(label, value);
+    el.bandSummary.appendChild(wrapper);
   });
 }
 
@@ -1365,40 +1303,34 @@ function renderBandPriceSummary(
    연도별 배당금
 ========================================================= */
 
-function makeAnnualDividendData(
-  analysis
-) {
+function makeAnnualDividendData(analysis) {
   const totals = new Map();
 
   const latestTimestamp =
     analysis.latest.timestamp;
 
-  analysis.dividends.forEach(
-    (dividend) => {
-      const year =
-        new Date(
-          dividend.date * 1000
-        ).getUTCFullYear();
+  analysis.dividends.forEach((dividend) => {
+    const year =
+      new Date(dividend.date * 1000)
+        .getUTCFullYear();
 
-      const adjusted =
-        adjustDividendForSplits(
-          dividend,
-          latestTimestamp,
-          analysis.splits
-        );
-
-      totals.set(
-        year,
-        (totals.get(year) || 0) +
-          adjusted
+    const adjusted =
+      adjustDividendForSplits(
+        dividend,
+        latestTimestamp,
+        analysis.splits
       );
-    }
-  );
+
+    totals.set(
+      year,
+      (totals.get(year) || 0) +
+      adjusted
+    );
+  });
 
   const currentYear =
-    new Date(
-      latestTimestamp * 1000
-    ).getUTCFullYear();
+    new Date(latestTimestamp * 1000)
+      .getUTCFullYear();
 
   const years = [];
 
@@ -1413,8 +1345,7 @@ function makeAnnualDividendData(
   return {
     years,
     totals: years.map(
-      (year) =>
-        totals.get(year) || 0
+      (year) => totals.get(year) || 0
     ),
   };
 }
@@ -1438,9 +1369,7 @@ function renderDividendChart(
   }
 
   const annual =
-    makeAnnualDividendData(
-      analysis
-    );
+    makeAnnualDividendData(analysis);
 
   if (dividendChart) {
     dividendChart.destroy();
@@ -1451,8 +1380,7 @@ function renderDividendChart(
     {
       type: "bar",
       data: {
-        labels:
-          annual.years.map(String),
+        labels: annual.years.map(String),
         datasets: [
           {
             label:
@@ -1518,9 +1446,7 @@ function renderDividendChart(
    배당수익률 위치 표시
 ========================================================= */
 
-function renderYieldPosition(
-  analysis
-) {
+function renderYieldPosition(analysis) {
   const rank =
     Number.isFinite(
       analysis.currentRank
@@ -1599,10 +1525,7 @@ function renderDividendTable(
 
   const descending =
     [...analysis.dividends]
-      .sort(
-        (a, b) =>
-          b.date - a.date
-      );
+      .sort((a, b) => b.date - a.date);
 
   el.dividendCount.textContent =
     `${descending.length}건`;
@@ -1615,74 +1538,65 @@ function renderDividendTable(
       document.createElement("td");
 
     cell.colSpan = 4;
-    cell.className =
-      "empty-table";
-
+    cell.className = "empty-table";
     cell.textContent =
       "최근 10년 배당금 내역이 없습니다.";
 
     row.appendChild(cell);
     el.dividendBody.appendChild(row);
-
     return;
   }
 
-  descending.forEach(
-    (dividend) => {
-      const adjusted =
-        adjustDividendForSplits(
-          dividend,
-          analysis.latest.timestamp,
-          analysis.splits
-        );
-
-      const row =
-        document.createElement("tr");
-
-      const dateCell =
-        document.createElement("td");
-
-      const originalCell =
-        document.createElement("td");
-
-      const adjustedCell =
-        document.createElement("td");
-
-      const currencyCell =
-        document.createElement("td");
-
-      dateCell.textContent =
-        formatDate(
-          dividend.date
-        );
-
-      originalCell.textContent =
-        formatMoney(
-          dividend.amount,
-          currency
-        );
-
-      adjustedCell.textContent =
-        formatMoney(
-          adjusted,
-          currency
-        );
-
-      currencyCell.textContent =
-        currency;
-
-      row.append(
-        dateCell,
-        originalCell,
-        adjustedCell,
-        currencyCell
+  descending.forEach((dividend) => {
+    const adjusted =
+      adjustDividendForSplits(
+        dividend,
+        analysis.latest.timestamp,
+        analysis.splits
       );
 
-      el.dividendBody.appendChild(
-        row
+    const row =
+      document.createElement("tr");
+
+    const dateCell =
+      document.createElement("td");
+
+    const originalCell =
+      document.createElement("td");
+
+    const adjustedCell =
+      document.createElement("td");
+
+    const currencyCell =
+      document.createElement("td");
+
+    dateCell.textContent =
+      formatDate(dividend.date);
+
+    originalCell.textContent =
+      formatMoney(
+        dividend.amount,
+        currency
       );
-    }
-  );
+
+    adjustedCell.textContent =
+      formatMoney(
+        adjusted,
+        currency
+      );
+
+    currencyCell.textContent =
+      currency;
+
+    row.append(
+      dateCell,
+      originalCell,
+      adjustedCell,
+      currencyCell
+    );
+
+    el.dividendBody.appendChild(row);
+  });
 }
 
 /* =========================================================
@@ -1699,14 +1613,6 @@ function looksLikeTicker(value) {
   const ticker =
     normalizeTicker(value);
 
-  /*
-   * 예:
-   * V
-   * AAPL
-   * BRK.B
-   * BF-B
-   * 005930
-   */
   return (
     /^[A-Z0-9][A-Z0-9.^=-]{0,14}$/
       .test(ticker)
@@ -1720,9 +1626,8 @@ function isDirectLookupQuote(quote) {
       .toUpperCase();
 
   const exchange =
-    String(
-      quote?.exchange || ""
-    ).trim();
+    String(quote?.exchange || "")
+      .trim();
 
   return (
     source === "DIRECT" ||
@@ -1733,9 +1638,7 @@ function isDirectLookupQuote(quote) {
   );
 }
 
-async function getExactTickerQuote(
-  query
-) {
+async function getExactTickerQuote(query) {
   if (!looksLikeTicker(query)) {
     return null;
   }
@@ -1748,20 +1651,17 @@ async function getExactTickerQuote(
       await requestJson(
         "/api/stock",
         {
-          symbol:
-            requestedSymbol,
+          symbol: requestedSymbol,
         }
       );
 
-    const result =
-      data?.result;
+    const result = data?.result;
 
     if (!result) {
       return null;
     }
 
-    const meta =
-      result.meta || {};
+    const meta = result.meta || {};
 
     const resolvedSymbol =
       normalizeTicker(
@@ -1772,8 +1672,7 @@ async function getExactTickerQuote(
 
     if (
       !resolvedSymbol ||
-      resolvedSymbol !==
-        requestedSymbol
+      resolvedSymbol !== requestedSymbol
     ) {
       return null;
     }
@@ -1804,20 +1703,14 @@ async function getExactTickerQuote(
       longname: name,
       shortname: name,
       exchange,
-      exchangeDisplay:
-        exchange,
+      exchangeDisplay: exchange,
       type:
         meta.instrumentType ||
         "EQUITY",
       market: "GLOBAL",
-      source:
-        "EXACT_SYMBOL",
+      source: "EXACT_SYMBOL",
     };
   } catch {
-    /*
-     * 정확한 티커 확인 실패 시에도
-     * 일반 검색은 계속 진행합니다.
-     */
     return null;
   }
 }
@@ -1831,8 +1724,7 @@ function mergeSearchQuotes(
     normalizeTicker(query);
 
   const merged = [];
-  const usedSymbols =
-    new Set();
+  const usedSymbols = new Set();
 
   if (exactQuote) {
     const symbol =
@@ -1841,61 +1733,44 @@ function mergeSearchQuotes(
       );
 
     if (symbol) {
-      merged.push(
-        exactQuote
-      );
-
-      usedSymbols.add(
-        symbol
-      );
+      merged.push(exactQuote);
+      usedSymbols.add(symbol);
     }
   }
 
-  searchQuotes.forEach(
-    (quote) => {
-      if (
-        !quote ||
-        isDirectLookupQuote(quote)
-      ) {
-        return;
-      }
+  searchQuotes.forEach((quote) => {
+    if (
+      !quote ||
+      isDirectLookupQuote(quote)
+    ) {
+      return;
+    }
 
-      const symbol =
+    const symbol =
+      normalizeTicker(
+        quote.symbol
+      );
+
+    if (
+      !symbol ||
+      usedSymbols.has(symbol)
+    ) {
+      return;
+    }
+
+    merged.push(quote);
+    usedSymbols.add(symbol);
+  });
+
+  return merged
+    .map((quote, originalIndex) => ({
+      quote,
+      originalIndex,
+      exact:
         normalizeTicker(
           quote.symbol
-        );
-
-      if (
-        !symbol ||
-        usedSymbols.has(symbol)
-      ) {
-        return;
-      }
-
-      merged.push(quote);
-      usedSymbols.add(symbol);
-    }
-  );
-
-  /*
-   * 일반 검색 결과에 정확히 일치하는 티커가
-   * 포함된 경우에도 가장 위로 이동합니다.
-   */
-  return merged
-    .map(
-      (
-        quote,
-        originalIndex
-      ) => ({
-        quote,
-        originalIndex,
-        exact:
-          normalizeTicker(
-            quote.symbol
-          ) ===
-          requestedSymbol,
-      })
-    )
+        ) === requestedSymbol,
+    }))
     .sort((a, b) => {
       if (a.exact !== b.exact) {
         return a.exact ? -1 : 1;
@@ -1906,18 +1781,14 @@ function mergeSearchQuotes(
         b.originalIndex
       );
     })
-    .map(
-      (item) => item.quote
-    );
+    .map((item) => item.quote);
 }
 
 /* =========================================================
    검색 결과 버튼
 ========================================================= */
 
-function createSearchResultButton(
-  quote
-) {
+function createSearchResultButton(quote) {
   const symbol =
     String(quote.symbol || "")
       .trim();
@@ -1943,17 +1814,16 @@ function createSearchResultButton(
     ).trim();
 
   const button =
-    document.createElement(
-      "button"
-    );
+    document.createElement("button");
 
   button.type = "button";
-  button.className =
-    "search-result";
+  button.className = "search-result";
+
   button.setAttribute(
     "role",
     "option"
   );
+
   button.setAttribute(
     "aria-selected",
     "false"
@@ -1966,9 +1836,7 @@ function createSearchResultButton(
     "search-result-main";
 
   const strong =
-    document.createElement(
-      "strong"
-    );
+    document.createElement("strong");
 
   strong.textContent = name;
 
@@ -1986,18 +1854,10 @@ function createSearchResultButton(
   symbolBox.className =
     "search-result-symbol";
 
-  symbolBox.textContent =
-    symbol;
+  symbolBox.textContent = symbol;
 
-  main.append(
-    strong,
-    small
-  );
-
-  button.append(
-    main,
-    symbolBox
-  );
+  main.append(strong, small);
+  button.append(main, symbolBox);
 
   button.addEventListener(
     "click",
@@ -2043,28 +1903,22 @@ function updateActiveSearchResult(
     (
       nextIndex +
       buttons.length
-    ) %
-    buttons.length;
+    ) % buttons.length;
 
-  buttons.forEach(
-    (button, index) => {
-      const active =
-        index ===
-        activeSearchIndex;
+  buttons.forEach((button, index) => {
+    const active =
+      index === activeSearchIndex;
 
-      button.classList.toggle(
-        "active",
-        active
-      );
+    button.classList.toggle(
+      "active",
+      active
+    );
 
-      button.setAttribute(
-        "aria-selected",
-        active
-          ? "true"
-          : "false"
-      );
-    }
-  );
+    button.setAttribute(
+      "aria-selected",
+      active ? "true" : "false"
+    );
+  });
 
   buttons[
     activeSearchIndex
@@ -2092,12 +1946,6 @@ async function handleSearch(event) {
   closeResults();
 
   try {
-    /*
-     * 일반 검색과 정확한 티커 확인을 동시에 실행합니다.
-     *
-     * V를 입력하면 /api/stock?symbol=V에서
-     * Visa Inc. 정보를 확인하여 가장 위에 표시합니다.
-     */
     const [
       searchData,
       exactQuote,
@@ -2106,9 +1954,7 @@ async function handleSearch(event) {
         "/api/search",
         { q: query }
       ),
-      getExactTickerQuote(
-        query
-      ),
+      getExactTickerQuote(query),
     ]);
 
     const searchQuotes =
@@ -2127,9 +1973,7 @@ async function handleSearch(event) {
 
     if (!quotes.length) {
       const message =
-        document.createElement(
-          "div"
-        );
+        document.createElement("div");
 
       message.className =
         "search-empty-message";
@@ -2137,10 +1981,7 @@ async function handleSearch(event) {
       message.textContent =
         "검색 결과가 없습니다. 정확한 종목명이나 티커를 입력해 주세요.";
 
-      el.results.appendChild(
-        message
-      );
-
+      el.results.appendChild(message);
       return;
     }
 
@@ -2151,9 +1992,7 @@ async function handleSearch(event) {
         );
 
       if (button) {
-        el.results.appendChild(
-          button
-        );
+        el.results.appendChild(button);
       }
     });
 
@@ -2169,10 +2008,7 @@ async function handleSearch(event) {
    종목 선택 및 분석
 ========================================================= */
 
-async function selectSymbol(
-  symbol,
-  name
-) {
+async function selectSymbol(symbol, name) {
   const normalizedSymbol =
     normalizeTicker(symbol);
 
@@ -2197,8 +2033,7 @@ async function selectSymbol(
         );
     }
 
-    const result =
-      data?.result;
+    const result = data?.result;
 
     if (!result) {
       throw new Error(
@@ -2228,9 +2063,7 @@ async function selectSymbol(
       currency
     );
 
-    renderYieldPosition(
-      analysis
-    );
+    renderYieldPosition(analysis);
 
     renderDividendTable(
       analysis,
@@ -2277,9 +2110,7 @@ if (el.form) {
 }
 
 document
-  .querySelectorAll(
-    ".example-button"
-  )
+  .querySelectorAll(".example-button")
   .forEach((button) => {
     button.addEventListener(
       "click",
@@ -2289,14 +2120,12 @@ document
           button.textContent.trim();
 
         if (el.input) {
-          el.input.value =
-            query;
+          el.input.value = query;
         }
 
         if (
           typeof el.form
-            ?.requestSubmit ===
-          "function"
+            ?.requestSubmit === "function"
         ) {
           el.form.requestSubmit();
         } else if (el.form) {
@@ -2344,14 +2173,7 @@ document.addEventListener(
 
     if (event.key === "Escape") {
       closeResults();
-
-      if (
-        document.activeElement !==
-        el.input
-      ) {
-        el.input?.focus();
-      }
-
+      el.input?.focus();
       return;
     }
 
@@ -2382,12 +2204,6 @@ document.addEventListener(
     }
 
     if (event.key === "Enter") {
-      /*
-       * 검색 결과가 열린 상태에서 Enter를 누르면
-       * 선택 중인 결과를 실행합니다.
-       *
-       * 방향키를 누르지 않았다면 첫 번째 결과를 실행합니다.
-       */
       event.preventDefault();
 
       const targetIndex =
@@ -2395,9 +2211,7 @@ document.addEventListener(
           ? activeSearchIndex
           : 0;
 
-      buttons[
-        targetIndex
-      ]?.click();
+      buttons[targetIndex]?.click();
     }
   }
 );
