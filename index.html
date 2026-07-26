@@ -17,8 +17,46 @@
 
   <link
     rel="stylesheet"
-    href="./style.css?v=20260717-8"
+    href="./style.css?v=20260717-9"
   >
+
+  <!--
+    요약 카드 배치:
+    데스크톱 첫 줄 3개, 둘째 줄 4개
+  -->
+  <style>
+    .stat-grid {
+      display: grid;
+      grid-template-columns:
+        repeat(12, minmax(0, 1fr));
+    }
+
+    .stat-card.summary-primary {
+      grid-column: span 4;
+    }
+
+    .stat-card.summary-secondary {
+      grid-column: span 3;
+    }
+
+    @media (max-width: 900px) {
+      .stat-grid {
+        grid-template-columns:
+          repeat(2, minmax(0, 1fr));
+      }
+
+      .stat-card.summary-primary,
+      .stat-card.summary-secondary {
+        grid-column: auto;
+      }
+    }
+
+    @media (max-width: 600px) {
+      .stat-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
 
   <script
     src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"
@@ -26,7 +64,7 @@
   ></script>
 
   <script
-    src="./app.js?v=20260717-8"
+    src="./app.js?v=20260717-9"
     defer
   ></script>
 </head>
@@ -146,7 +184,7 @@
       <div class="spinner"></div>
 
       <p>
-        10년 주가와 배당 데이터를 분석하고 있습니다.
+        주가와 배당 데이터를 분석하고 있습니다.
       </p>
     </section>
 
@@ -193,10 +231,11 @@
       </section>
 
       <section class="stat-grid">
-        <article class="stat-card">
-          <span>
-            현재 주가
-          </span>
+        <!-- 첫째 줄 3개 -->
+        <article
+          class="stat-card summary-primary"
+        >
+          <span>현재 주가</span>
 
           <strong id="current-price">
             -
@@ -207,7 +246,9 @@
           </small>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card summary-primary"
+        >
           <span>
             최근 12개월 배당금
           </span>
@@ -221,7 +262,9 @@
           </small>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card summary-primary"
+        >
           <span>
             현재 배당수익률
           </span>
@@ -235,7 +278,10 @@
           </small>
         </article>
 
-        <article class="stat-card">
+        <!-- 둘째 줄 4개 -->
+        <article
+          class="stat-card summary-secondary"
+        >
           <span>
             10년 중앙 배당수익률
           </span>
@@ -249,7 +295,9 @@
           </small>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card summary-secondary"
+        >
           <span>
             10년 백분위
           </span>
@@ -263,7 +311,9 @@
           </small>
         </article>
 
-        <article class="stat-card">
+        <article
+          class="stat-card summary-secondary"
+        >
           <span>
             배당 연속 증가·유지 기간
           </span>
@@ -273,13 +323,13 @@
           </strong>
 
           <small>
-            완료된 연도별 주당배당금 기준
+            전체 연도별 주당배당금 기준
           </small>
         </article>
 
         <article
           id="valuation-card"
-          class="stat-card valuation-card"
+          class="stat-card valuation-card summary-secondary"
         >
           <span>
             밴드 판정
@@ -361,8 +411,8 @@
           </div>
 
           <p class="panel-description">
-            Yahoo Finance에서 제공하는 주식분할 보정
-            주당배당금을 연도별로 합산합니다.
+            Yahoo Finance의 주식분할 보정 배당금을
+            연도별로 합산합니다.
           </p>
 
           <div class="chart-container">
@@ -404,53 +454,28 @@
 
           <dl class="percentile-list">
             <div>
-              <dt>
-                10% 배당수익률
-              </dt>
-
-              <dd id="p10-yield">
-                -
-              </dd>
+              <dt>10% 배당수익률</dt>
+              <dd id="p10-yield">-</dd>
             </div>
 
             <div>
-              <dt>
-                25% 배당수익률
-              </dt>
-
-              <dd id="p25-yield">
-                -
-              </dd>
+              <dt>25% 배당수익률</dt>
+              <dd id="p25-yield">-</dd>
             </div>
 
             <div>
-              <dt>
-                중앙 배당수익률
-              </dt>
-
-              <dd id="p50-yield">
-                -
-              </dd>
+              <dt>중앙 배당수익률</dt>
+              <dd id="p50-yield">-</dd>
             </div>
 
             <div>
-              <dt>
-                75% 배당수익률
-              </dt>
-
-              <dd id="p75-yield">
-                -
-              </dd>
+              <dt>75% 배당수익률</dt>
+              <dd id="p75-yield">-</dd>
             </div>
 
             <div>
-              <dt>
-                90% 배당수익률
-              </dt>
-
-              <dd id="p90-yield">
-                -
-              </dd>
+              <dt>90% 배당수익률</dt>
+              <dd id="p90-yield">-</dd>
             </div>
           </dl>
         </article>
@@ -515,9 +540,9 @@
         </p>
 
         <p>
-          배당 연속 증가·유지 기간은 현재 제공되는 과거 데이터
-          범위 안에서 완료된 연도의 연간 주당배당금을 비교한
-          결과입니다.
+          배당 연속 증가·유지 기간은 Yahoo Finance에서
+          제공되는 전체 배당 이력 중 완료된 연도의
+          연간 주당배당금을 비교하여 계산합니다.
         </p>
 
         <p>
