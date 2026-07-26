@@ -17,7 +17,7 @@
 
   <link
     rel="stylesheet"
-    href="./style.css?v=20260717-6"
+    href="./style.css?v=20260717-8"
   >
 
   <script
@@ -26,7 +26,7 @@
   ></script>
 
   <script
-    src="./app.js?v=20260717-7"
+    src="./app.js?v=20260717-8"
     defer
   ></script>
 </head>
@@ -217,7 +217,7 @@
           </strong>
 
           <small>
-            주당배당금·액면분할 보정
+            주당배당금 기준
           </small>
         </article>
 
@@ -260,6 +260,20 @@
 
           <small>
             높을수록 배당수익률이 높은 구간
+          </small>
+        </article>
+
+        <article class="stat-card">
+          <span>
+            배당 연속 증가·유지 기간
+          </span>
+
+          <strong id="dividend-streak">
+            -
+          </strong>
+
+          <small>
+            완료된 연도별 주당배당금 기준
           </small>
         </article>
 
@@ -347,8 +361,8 @@
           </div>
 
           <p class="panel-description">
-            과거 액면분할이 있었던 경우 현재 주식 수 기준으로
-            배당금을 보정합니다.
+            Yahoo Finance에서 제공하는 주식분할 보정
+            주당배당금을 연도별로 합산합니다.
           </p>
 
           <div class="chart-container">
@@ -382,17 +396,9 @@
             </div>
 
             <div class="yield-scale-labels">
-              <span>
-                고평가
-              </span>
-
-              <span>
-                중립
-              </span>
-
-              <span>
-                저평가
-              </span>
+              <span>고평가</span>
+              <span>중립</span>
+              <span>저평가</span>
             </div>
           </div>
 
@@ -476,21 +482,10 @@
           <table>
             <thead>
               <tr>
-                <th>
-                  배당락일
-                </th>
-
-                <th>
-                  지급 배당금
-                </th>
-
-                <th>
-                  분할 보정 배당금
-                </th>
-
-                <th>
-                  통화
-                </th>
+                <th>배당락일</th>
+                <th>지급 배당금</th>
+                <th>분할 보정 배당금</th>
+                <th>통화</th>
               </tr>
             </thead>
 
@@ -517,6 +512,12 @@
           배당수익률이 높다고 반드시 저평가된 것은 아닙니다.
           주가 급락이나 향후 배당 삭감 가능성 때문에
           배당수익률이 높아질 수도 있습니다.
+        </p>
+
+        <p>
+          배당 연속 증가·유지 기간은 현재 제공되는 과거 데이터
+          범위 안에서 완료된 연도의 연간 주당배당금을 비교한
+          결과입니다.
         </p>
 
         <p>
